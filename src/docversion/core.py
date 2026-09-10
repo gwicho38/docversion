@@ -1,14 +1,16 @@
 """Pure, git-free logic for docversion: manifest I/O and naming rules."""
 
+import fnmatch
 import hashlib
 import json
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 MANIFEST_NAME = ".docversion.json"
 VERSIONS_DIR = "versions"
+IGNORE_FILE_NAME = ".docversionignore"
 HASH_LEN = 8
 VERSION_SUFFIX_RE = re.compile(r"^(?P<stem>.*?)(?: v(?P<version>\d+)(?:-[0-9a-f]{6,16})?)$")
 
@@ -63,6 +65,31 @@ def find_doc_by_working_file(manifest: dict, filename: str) -> Optional[str]:
         if entry["working_file"] == filename:
             return key
     return None
+
+
+def load_ignore_patterns(directory: Path) -> List[str]:
+    """Read DIRECTORY's .docversionignore: one glob pattern per line,
+    matched against a candidate file's name. Blank lines and lines
+    starting with '#' are skipped. Missing file -> no patterns.
+
+    Only affects auto-discovery (`sync`'s pattern globbing) — an
+    explicit `init <file>` still tracks whatever you name, same as
+    `git add -f` overrides .gitignore.
+    """
+    path = directory / IGNORE_FILE_NAME
+    if not path.exists():
+        return []
+    patterns = []
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            patterns.append(line)
+    return patterns
+
+
+def is_ignored(name: str, patterns: List[str]) -> bool:
+    """True if NAME matches any of PATTERNS (fnmatch, case-sensitive)."""
+    return any(fnmatch.fnmatch(name, p) for p in patterns)
 
 
 def new_history_entry(version: int, archive_rel_path: str, note: str, sha256: str) -> dict:

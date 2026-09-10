@@ -92,6 +92,27 @@ def test_find_doc_by_working_file():
     assert core.find_doc_by_working_file(manifest, "missing.docx") is None
 
 
+def test_load_ignore_patterns_missing_file_returns_empty(tmp_path):
+    assert core.load_ignore_patterns(tmp_path) == []
+
+
+def test_load_ignore_patterns_skips_blanks_and_comments(tmp_path):
+    (tmp_path / core.IGNORE_FILE_NAME).write_text(
+        "\n# a comment\ntask-intake.docx\n\n*intake*.docx\n"
+    )
+    assert core.load_ignore_patterns(tmp_path) == ["task-intake.docx", "*intake*.docx"]
+
+
+def test_is_ignored_literal_match():
+    assert core.is_ignored("task-intake.docx", ["task-intake.docx"])
+    assert not core.is_ignored("Other.docx", ["task-intake.docx"])
+
+
+def test_is_ignored_glob_match():
+    assert core.is_ignored("client-intake.docx", ["*intake*.docx"])
+    assert not core.is_ignored("Report.docx", ["*intake*.docx"])
+
+
 def test_new_history_entry_has_expected_shape():
     entry = core.new_history_entry(1, "versions/Foo v1.docx", "initial import", "deadbeef")
     assert entry["version"] == 1

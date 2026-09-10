@@ -198,6 +198,23 @@ def test_sync_bumps_changed_tracked_doc(tmp_path):
     assert (tmp_path / vname("Gamma", 2)).read_bytes() == b"body edited with tracked changes"
 
 
+def test_sync_skips_files_matching_docversionignore(tmp_path):
+    make_git_repo(tmp_path)
+    (tmp_path / "task-intake.docx").write_bytes(b"intake")
+    (tmp_path / "Report.docx").write_bytes(b"report")
+    (tmp_path / core.IGNORE_FILE_NAME).write_text("task-intake.docx\n*intake*.docx\n")
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["sync", str(tmp_path), "*.docx"])
+    assert result.exit_code == 0, result.output
+    assert "1 ignored" in result.output
+
+    manifest = core.load_manifest(tmp_path)
+    assert "report" in manifest["docs"]
+    assert "task-intake" not in manifest["docs"]
+    assert (tmp_path / "task-intake.docx").exists()  # untouched, not renamed
+
+
 def test_sync_default_directory_is_cwd(tmp_path, monkeypatch):
     make_git_repo(tmp_path)
     (tmp_path / "Delta.docx").write_bytes(b"d")

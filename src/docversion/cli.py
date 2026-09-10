@@ -244,18 +244,26 @@ def sync(ctx, directory, patterns, note):
     already-tracked document whose current file has changed since its
     version began. Unchanged documents are left alone — running sync
     twice in a row with no edits in between does nothing the second time.
+
+    Files matching a pattern in DIRECTORY's .docversionignore are never
+    auto-onboarded (an explicit `init` still works on them).
     """
     directory = Path(directory).resolve() if directory else Path.cwd()
     patterns = patterns or ("*.docx",)
     manifest = core.load_manifest(directory)
+    ignore_patterns = core.load_ignore_patterns(directory)
 
     candidates = set()
     for pattern in patterns:
         candidates.update(resolve.glob_existing(pattern, directory))
 
     new_files = []
+    ignored = 0
     for c in sorted(candidates):
         if not c.is_file() or c.parent != directory:
+            continue
+        if core.is_ignored(c.name, ignore_patterns):
+            ignored += 1
             continue
         base_stem, _ = core.split_version(c.stem)
         key = core.key_for(base_stem)
@@ -277,7 +285,7 @@ def sync(ctx, directory, patterns, note):
         ctx.invoke(bump, file=str(working), note=note)
         bumped += 1
 
-    click.echo(f"sync: {len(new_files)} onboarded, {bumped} bumped, {skipped} unchanged")
+    click.echo(f"sync: {len(new_files)} onboarded, {bumped} bumped, {skipped} unchanged, {ignored} ignored")
 
 
 @cli.command()
