@@ -85,16 +85,10 @@ def init(files, note):
         click.echo(f"  ({warning})")
 
 
-@cli.command()
-@click.argument("file")
-@click.option("--note", default="", help="What changed in this version.")
-def bump(file, note):
-    """Freeze FILE's current version and open the next version for editing.
-
-    FILE accepts a literal path, a glob matching exactly one file, or a
-    tracked document's name (its current version is looked up for you).
-    """
-    src = resolve.resolve_one(file, directory=Path.cwd())
+def _bump_one(src: Path, note: str) -> str:
+    """Bump SRC's tracked document forward one version. Raises
+    click.ClickException if SRC isn't tracked or isn't the current
+    version. Returns a human-readable summary line on success."""
     directory = src.parent
     manifest = core.load_manifest(directory)
     key = _resolve_key(manifest, src)
@@ -138,7 +132,50 @@ def bump(file, note):
     )
     if warning:
         click.echo(f"  ({warning})")
-    click.echo(f"{display}: v{current_version} frozen -> now editing v{next_version} ({next_name})")
+    return f"{display}: v{current_version} frozen -> now editing v{next_version} ({next_name})"
+
+
+@cli.command()
+@click.argument("files", nargs=-1, required=True)
+@click.option("--note", default="", help="What changed in this version.")
+def bump(files, note):
+    """Freeze the current version of FILES and open the next version of
+    each for editing.
+
+    FILES accepts a literal path, a glob (e.g. "*.docx"), or a tracked
+    document's name (its current version is looked up for you).
+
+    With a single target, a problem (not tracked, not the current
+    version) is a hard error. With multiple targets (several files or
+    a glob), a problem with one file is reported and skipped so the
+    rest still bump — this is what a Finder Quick Action or `bump *`
+    needs, since a wildcard will often catch files that aren't tracked.
+    """
+    directory = Path.cwd()
+    expanded = None
+
+    if len(files) == 1:
+        try:
+            expanded = resolve.expand_patterns(files, directory=directory)
+        except click.ClickException:
+            expanded = None
+        if expanded is None:
+            # no literal/glob match — fall back to a bare tracked name (e.g. "Charter")
+            src = resolve.resolve_one(files[0], directory=directory)
+            click.echo(_bump_one(src, note))
+            return
+    else:
+        expanded = resolve.expand_patterns(files, directory=directory)
+
+    if len(expanded) == 1:
+        click.echo(_bump_one(expanded[0], note))
+        return
+
+    for src in expanded:
+        try:
+            click.echo(_bump_one(src, note))
+        except click.ClickException as exc:
+            click.echo(f"skip {src.name}: {exc.message}")
 
 
 @cli.command()
@@ -293,7 +330,7 @@ def sync(ctx, directory, patterns, note, skip_unchanged):
         ):
             skipped += 1
             continue
-        ctx.invoke(bump, file=str(working), note=note)
+        ctx.invoke(bump, files=(str(working),), note=note)
         bumped += 1
 
     click.echo(f"sync: {len(new_files)} onboarded, {bumped} bumped, {skipped} unchanged, {ignored} ignored")

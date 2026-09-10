@@ -84,6 +84,82 @@ def test_bump_always_advances_even_with_no_edits(tmp_path):
     assert (tmp_path / vname("Steady", 1)).exists()
 
 
+def test_bump_accepts_multiple_files_and_bumps_each(tmp_path, monkeypatch):
+    make_git_repo(tmp_path)
+    (tmp_path / "Alpha.docx").write_bytes(b"a")
+    (tmp_path / "Beta.docx").write_bytes(b"b")
+    runner = CliRunner()
+    runner.invoke(cli, ["init", str(tmp_path / "Alpha.docx"), str(tmp_path / "Beta.docx")])
+
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        cli, ["bump", vname("Alpha", 0), vname("Beta", 0)]
+    )
+    assert result.exit_code == 0, result.output
+
+    manifest = core.load_manifest(tmp_path)
+    assert manifest["docs"]["alpha"]["current_version"] == 1
+    assert manifest["docs"]["beta"]["current_version"] == 1
+
+
+def test_bump_glob_skips_untracked_and_non_docx_instead_of_failing(tmp_path, monkeypatch):
+    make_git_repo(tmp_path)
+    (tmp_path / "Alpha.docx").write_bytes(b"a")
+    (tmp_path / "task-intake.docx").write_bytes(b"intake")  # never tracked
+    runner = CliRunner()
+    runner.invoke(cli, ["init", str(tmp_path / "Alpha.docx")])
+
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(cli, ["bump", "*.docx"])
+    assert result.exit_code == 0, result.output
+    assert "not tracked" in result.output
+
+    manifest = core.load_manifest(tmp_path)
+    assert manifest["docs"]["alpha"]["current_version"] == 1
+    assert "task-intake" not in manifest["docs"]
+    assert (tmp_path / "task-intake.docx").exists()  # untouched
+
+
+def test_bump_single_stale_target_still_fails_strictly(tmp_path, monkeypatch):
+    # a single explicit target must still error loudly (batch leniency is
+    # only for multi-file/glob invocations)
+    make_git_repo(tmp_path)
+    doc = tmp_path / "Contract.docx"
+    doc.write_bytes(b"body")
+    runner = CliRunner()
+    runner.invoke(cli, ["init", str(doc)])
+    v0_path = tmp_path / vname("Contract", 0)
+    runner.invoke(cli, ["bump", str(v0_path)])  # now current is v1
+
+    stale = tmp_path / vname("Contract", 0)
+    stale.write_bytes(b"stale")
+    result = runner.invoke(cli, ["bump", str(stale)])
+    assert result.exit_code != 0
+    assert "not the current version" in result.output
+
+
+def test_bump_reproduces_shell_expanded_star(tmp_path, monkeypatch):
+    # exact shape of the real failure: `docversion bump *` where the shell
+    # already expanded "*" into every file AND directory in the folder
+    make_git_repo(tmp_path)
+    (tmp_path / "Report.docx").write_bytes(b"body")
+    (tmp_path / "Report.pdf").write_bytes(b"pdf")
+    (tmp_path / "task-intake.docx").write_bytes(b"intake")
+    (tmp_path / "archive").mkdir()
+    (tmp_path / "versions_extra").mkdir()
+    runner = CliRunner()
+    runner.invoke(cli, ["init", str(tmp_path / "Report.docx")])
+
+    monkeypatch.chdir(tmp_path)
+    shell_expanded_star = sorted(p.name for p in tmp_path.iterdir() if p.name != ".docversion.json")
+    result = runner.invoke(cli, ["bump", *shell_expanded_star])
+    assert result.exit_code == 0, result.output
+
+    manifest = core.load_manifest(tmp_path)
+    assert manifest["docs"]["report"]["current_version"] == 1
+    assert "task-intake" not in manifest["docs"]
+
+
 def test_bump_rejects_non_current_file(tmp_path):
     make_git_repo(tmp_path)
     doc = tmp_path / "Contract.docx"

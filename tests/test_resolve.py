@@ -55,6 +55,28 @@ def test_expand_patterns_glob_skips_directories(tmp_path):
     assert [p.name for p in result] == ["Real.docx"]
 
 
+def test_expand_patterns_batch_skips_directories_instead_of_raising(tmp_path):
+    (tmp_path / "subdir").mkdir()
+    touch(tmp_path / "Real.docx")
+    # multiple raw patterns == a batch (e.g. a shell-expanded "*") — a
+    # stray directory among them should be skipped, not fatal
+    result = resolve.expand_patterns([str(tmp_path / "subdir"), str(tmp_path / "Real.docx")], directory=tmp_path)
+    assert [p.name for p in result] == ["Real.docx"]
+
+
+def test_expand_patterns_batch_skips_pattern_with_no_match(tmp_path):
+    touch(tmp_path / "Real.docx")
+    result = resolve.expand_patterns(["Real.docx", "nope.docx"], directory=tmp_path)
+    assert [p.name for p in result] == ["Real.docx"]
+
+
+def test_expand_patterns_single_pattern_still_raises_on_directory(tmp_path):
+    subdir = tmp_path / "subdir"
+    subdir.mkdir()
+    with pytest.raises(ClickException, match="directory"):
+        resolve.expand_patterns([str(subdir)], directory=tmp_path)
+
+
 def test_resolve_one_rejects_directory(tmp_path):
     subdir = tmp_path / "subdir"
     subdir.mkdir()

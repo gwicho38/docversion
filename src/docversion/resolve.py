@@ -19,10 +19,17 @@ def _glob(pattern: str, directory: Path) -> List[Path]:
 def expand_patterns(patterns, directory: Optional[Path] = None) -> List[Path]:
     """Expand PATTERNS (literal paths or globs) into existing file paths.
 
-    Each pattern must match at least one file; duplicates are dropped
-    while preserving first-seen order.
+    Duplicates are dropped while preserving first-seen order.
+
+    With a single pattern, a directory or a total non-match is a hard
+    error — you named exactly one thing and it wasn't a file. With
+    multiple patterns (e.g. a shell-expanded "*", which includes
+    subdirectories and anything else in the folder), a directory or a
+    pattern matching nothing is silently skipped instead: a wildcard is
+    expected to catch things that aren't valid targets.
     """
     directory = directory or Path.cwd()
+    strict = len(patterns) == 1
     results: List[Path] = []
     seen = set()
 
@@ -32,15 +39,19 @@ def expand_patterns(patterns, directory: Optional[Path] = None) -> List[Path]:
             literal = directory / pattern
 
         if literal.is_dir():
-            raise click.ClickException(
-                f"'{pattern}' is a directory, not a file — docversion never versions a "
-                f"directory. Use `docversion sync {pattern}` or a glob like '*.docx'."
-            )
+            if strict:
+                raise click.ClickException(
+                    f"'{pattern}' is a directory, not a file — docversion never versions a "
+                    f"directory. Use `docversion sync {pattern}` or a glob like '*.docx'."
+                )
+            continue
 
         matches = [literal] if literal.exists() else [m for m in _glob(pattern, directory) if m.is_file()]
 
         if not matches:
-            raise click.ClickException(f"no files match: {pattern}")
+            if strict:
+                raise click.ClickException(f"no files match: {pattern}")
+            continue
 
         for m in matches:
             resolved = m.resolve()
