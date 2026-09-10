@@ -30,7 +30,14 @@ def expand_patterns(patterns, directory: Optional[Path] = None) -> List[Path]:
         literal = Path(pattern)
         if not literal.is_absolute():
             literal = directory / pattern
-        matches = [literal] if literal.exists() else _glob(pattern, directory)
+
+        if literal.is_dir():
+            raise click.ClickException(
+                f"'{pattern}' is a directory, not a file — docversion never versions a "
+                f"directory. Use `docversion sync {pattern}` or a glob like '*.docx'."
+            )
+
+        matches = [literal] if literal.exists() else [m for m in _glob(pattern, directory) if m.is_file()]
 
         if not matches:
             raise click.ClickException(f"no files match: {pattern}")
@@ -61,10 +68,16 @@ def resolve_one(pattern: str, directory: Optional[Path] = None) -> Path:
     literal = Path(pattern)
     if not literal.is_absolute():
         literal = directory / pattern
+
+    if literal.is_dir():
+        raise click.ClickException(
+            f"'{pattern}' is a directory, not a file — docversion never versions a directory."
+        )
+
     if literal.exists():
         return literal.resolve()
 
-    matches = _glob(pattern, directory)
+    matches = [m for m in _glob(pattern, directory) if m.is_file()]
     if len(matches) == 1:
         return matches[0].resolve()
     if len(matches) > 1:

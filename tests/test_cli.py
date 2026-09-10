@@ -242,6 +242,22 @@ def test_log_shows_history(tmp_path):
     assert "v1" in result.output
 
 
+def test_init_dot_is_rejected_not_crashed(tmp_path, monkeypatch):
+    make_git_repo(tmp_path)
+    (tmp_path / "Report.docx").write_bytes(b"body")
+    original_name = tmp_path.name
+
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(cli, ["init", "."])
+
+    assert result.exit_code != 0
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "directory" in result.output
+    assert tmp_path.exists()
+    assert tmp_path.name == original_name  # the directory itself was never touched
+
+
 def test_versions_of_same_doc_have_distinct_filenames(tmp_path):
     make_git_repo(tmp_path)
     doc = tmp_path / "Distinct.docx"

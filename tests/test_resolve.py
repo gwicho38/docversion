@@ -36,6 +36,32 @@ def test_expand_patterns_no_match_raises(tmp_path):
         resolve.expand_patterns(["nope*.docx"], directory=tmp_path)
 
 
+def test_expand_patterns_rejects_directory(tmp_path):
+    subdir = tmp_path / "subdir"
+    subdir.mkdir()
+    with pytest.raises(ClickException, match="directory"):
+        resolve.expand_patterns([str(subdir)], directory=tmp_path)
+
+
+def test_expand_patterns_dot_rejected_as_directory(tmp_path):
+    with pytest.raises(ClickException, match="directory"):
+        resolve.expand_patterns(["."], directory=tmp_path)
+
+
+def test_expand_patterns_glob_skips_directories(tmp_path):
+    (tmp_path / "subdir.docx").mkdir()
+    touch(tmp_path / "Real.docx")
+    result = resolve.expand_patterns(["*.docx"], directory=tmp_path)
+    assert [p.name for p in result] == ["Real.docx"]
+
+
+def test_resolve_one_rejects_directory(tmp_path):
+    subdir = tmp_path / "subdir"
+    subdir.mkdir()
+    with pytest.raises(ClickException, match="directory"):
+        resolve.resolve_one(str(subdir), directory=tmp_path)
+
+
 def test_resolve_one_literal_path(tmp_path):
     f = touch(tmp_path / "Foo.docx")
     assert resolve.resolve_one(str(f), directory=tmp_path) == f.resolve()
