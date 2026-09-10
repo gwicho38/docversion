@@ -12,7 +12,7 @@ from pathlib import Path
 
 import click
 
-from docversion import core, gitutil
+from docversion import core, gitutil, resolve
 
 
 def _resolve_key(manifest: dict, path: Path) -> str:
@@ -31,17 +31,22 @@ def cli():
 
 
 @cli.command()
-@click.argument("files", nargs=-1, required=True, type=click.Path(exists=True))
+@click.argument("files", nargs=-1, required=True)
 @click.option("--note", default="initial import", help="Note for the v1 history entry.")
 def init(files, note):
-    """Register FILES as version 1 of a tracked document each."""
-    directory = Path(files[0]).resolve().parent
+    """Register FILES as version 1 of a tracked document each.
+
+    FILES accepts literal paths or shell-style glob patterns (e.g.
+    "*.docx"), like `ls` — quote a pattern to expand it inside
+    docversion instead of relying on shell globbing.
+    """
+    expanded = resolve.expand_patterns(files, directory=Path.cwd())
+    directory = expanded[0].parent
     manifest = core.load_manifest(directory)
     versions_dir = directory / core.VERSIONS_DIR
     versions_dir.mkdir(exist_ok=True)
 
-    for f in files:
-        src = Path(f).resolve()
+    for src in expanded:
         if src.parent != directory:
             click.echo(f"skip {src.name}: not in {directory}")
             continue
@@ -75,17 +80,21 @@ def init(files, note):
         click.echo(f"tracked: {base_stem}  ->  {new_name}  (v{version} archived)")
 
     core.save_manifest(directory, manifest)
-    warning = gitutil.commit_all(directory, f"docversion: init {', '.join(Path(f).stem for f in files)}")
+    warning = gitutil.commit_all(directory, f"docversion: init {', '.join(p.stem for p in expanded)}")
     if warning:
         click.echo(f"  ({warning})")
 
 
 @cli.command()
-@click.argument("file", type=click.Path(exists=True))
+@click.argument("file")
 @click.option("--note", default="", help="What changed in this version.")
 def bump(file, note):
-    """Freeze FILE's current version and open the next version for editing."""
-    src = Path(file).resolve()
+    """Freeze FILE's current version and open the next version for editing.
+
+    FILE accepts a literal path, a glob matching exactly one file, or a
+    tracked document's name (its current version is looked up for you).
+    """
+    src = resolve.resolve_one(file, directory=Path.cwd())
     directory = src.parent
     manifest = core.load_manifest(directory)
     key = _resolve_key(manifest, src)
@@ -133,12 +142,16 @@ def bump(file, note):
 
 
 @cli.command()
-@click.argument("file", type=click.Path(exists=True))
+@click.argument("file")
 @click.argument("version", type=int)
 @click.option("--note", default="", help="Why this version is being restored.")
 def restore(file, version, note):
-    """Bring VERSION of FILE back as the new current version (non-destructive)."""
-    src = Path(file).resolve()
+    """Bring VERSION of FILE back as the new current version (non-destructive).
+
+    FILE accepts a literal path, a glob matching exactly one file, or a
+    tracked document's name.
+    """
+    src = resolve.resolve_one(file, directory=Path.cwd())
     directory = src.parent
     manifest = core.load_manifest(directory)
     key = _resolve_key(manifest, src)
@@ -188,18 +201,23 @@ def restore(file, version, note):
 
 
 @cli.command()
-@click.argument("file", required=False, type=click.Path(exists=True))
+@click.argument("file", required=False)
 def log(file):
-    """Show version history for FILE, or all tracked docs in the cwd if omitted."""
-    directory = Path(file).resolve().parent if file else Path.cwd()
+    """Show version history for FILE, or all tracked docs in the cwd if omitted.
+
+    FILE accepts a literal path, a glob matching exactly one file, or a
+    tracked document's name.
+    """
+    resolved = resolve.resolve_one(file, directory=Path.cwd()) if file else None
+    directory = resolved.parent if resolved else Path.cwd()
     manifest = core.load_manifest(directory)
     if not manifest["docs"]:
         click.echo("No tracked documents in this directory.")
         return
 
     keys = list(manifest["docs"].keys())
-    if file:
-        key = _resolve_key(manifest, Path(file).resolve())
+    if resolved:
+        key = _resolve_key(manifest, resolved)
         keys = [key]
 
     for key in keys:

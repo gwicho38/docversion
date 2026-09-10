@@ -114,6 +114,35 @@ def test_git_commits_are_created(tmp_path):
     assert "docversion: init" in log.stdout
 
 
+def test_init_accepts_glob_pattern(tmp_path, monkeypatch):
+    make_git_repo(tmp_path)
+    (tmp_path / "Alpha.docx").write_bytes(b"a")
+    (tmp_path / "Beta.docx").write_bytes(b"b")
+    (tmp_path / "notes.txt").write_bytes(b"n")
+
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(cli, ["init", "*.docx"])
+    assert result.exit_code == 0, result.output
+
+    manifest = core.load_manifest(tmp_path)
+    assert set(manifest["docs"].keys()) == {"alpha", "beta"}
+    assert (tmp_path / "notes.txt").exists()  # untouched, not a .docx
+
+
+def test_bump_accepts_name_without_version_suffix(tmp_path, monkeypatch):
+    make_git_repo(tmp_path)
+    doc = tmp_path / "Charter.docx"
+    doc.write_bytes(b"body")
+    runner = CliRunner()
+    runner.invoke(cli, ["init", str(doc)])
+
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(cli, ["bump", "Charter", "--note", "v2 draft"])
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "Charter v2.docx").exists()
+
+
 def test_log_shows_history(tmp_path):
     make_git_repo(tmp_path)
     doc = tmp_path / "Report.docx"
