@@ -9,27 +9,28 @@ files.
 ## Model
 
 - Each tracked document has a **working file** you keep editing
-  (e.g. `Operating Agreement v3-9f2c7a1e.docx`) and a manifest
+  (e.g. `Operating Agreement 9f2c7a1e_v3.docx`) and a manifest
   (`.docversion.json`) recording every past version.
-- Version filenames end in a short hash derived from `title + version
-  number` (deterministic, not random) — so two versions of the same
-  document never look almost-identical, and it's obvious at a glance
-  that a new file actually landed.
-- `init` renames existing files to `<name> v1-<hash><ext>` and freezes
+- Version filenames end in `<hash>_v<N>`, where the hash is derived
+  from `title + version number` (deterministic, not random) — so two
+  versions of the same document never look almost-identical, and it's
+  obvious at a glance that a new file actually landed.
+- Versions start at **v0**.
+- `init` renames existing files to `<name> <hash>_v0<ext>` and freezes
   an immutable copy under `versions/`.
 - `bump` freezes the current working file as its version, then opens
   the next version as a byte-identical copy — any Track Changes markup
-  inside the file carries over unchanged.
+  inside the file carries over unchanged. It always advances the
+  version, whether or not the content actually changed.
 - `restore` brings an older version back as a new current version
   (non-destructive: restoring is itself a version bump). It looks the
   old version up from the manifest's history, not by recomputing a
   filename, so it isn't tied to any particular naming scheme.
-- `sync [DIR] [PATTERNS...]` is the one-click, idempotent version of
-  the above: onboards any new file matching PATTERNS (default
-  `*.docx`) as v1, and bumps only the tracked docs that actually
-  changed since their current version began. Running it again with no
-  edits does nothing — safe to trigger repeatedly (e.g. a Finder Quick
-  Action, see below).
+- `sync [DIR] [PATTERNS...]` is the one-click version of the above:
+  onboards any new file matching PATTERNS (default `*.docx`) as v0,
+  then bumps every already-tracked document — every run. Pass
+  `--skip-unchanged` to skip a doc whose content is identical to its
+  current version instead of always bumping it.
 - `log` / `status` show history.
 - Every state-changing command commits to git automatically if the
   directory is a repo.
@@ -55,30 +56,33 @@ uv run docversion --help
 ## Usage
 
 ```bash
-# Register existing drafts as v1
+# Register existing drafts as v0
 docversion init "Operating Agreement.docx" "Employee Waiver.docx"
 
-# ... edit "Operating Agreement v1.docx" in Word, Track Changes on ...
+# ... edit the resulting "Operating Agreement <hash>_v0.docx" in Word ...
 
-# Lock in v1, start editing v2
-docversion bump "Operating Agreement v1.docx" --note "sent to client for review"
+# Lock in v0, start editing v1 (works with or without edits — bump always advances)
+docversion bump "Operating Agreement" --note "sent to client for review"
 
-# ... edit "Operating Agreement v2.docx" ...
+# ... edit "Operating Agreement <hash>_v1.docx" ...
 
-docversion bump "Operating Agreement v2.docx" --note "incorporated counsel comments"
+docversion bump "Operating Agreement" --note "incorporated counsel comments"
 
-# See the full history
-docversion log "Operating Agreement v3.docx"
+# See the full history (reference by tracked name — no version number to remember)
+docversion log "Operating Agreement"
 
-# Roll back to v1's content as a new v4 (non-destructive)
-docversion restore "Operating Agreement v3.docx" 1
+# Roll back to v0's content as a new v3 (non-destructive)
+docversion restore "Operating Agreement" 0
 
 # List everything tracked in the current directory
 docversion status
 
-# One-click sync: onboard new *.docx files as v1, bump only what changed
+# One-click sync: onboard new *.docx files as v0, then bump every tracked doc
 docversion sync
 docversion sync ~/Matters/some-matter "*.docx" "*.pdf"
+
+# Same, but skip a doc whose content hasn't changed instead of always bumping it
+docversion sync --skip-unchanged
 ```
 
 ## Finder Quick Action

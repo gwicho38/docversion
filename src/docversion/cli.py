@@ -32,9 +32,9 @@ def cli():
 
 @cli.command()
 @click.argument("files", nargs=-1, required=True)
-@click.option("--note", default="initial import", help="Note for the v1 history entry.")
+@click.option("--note", default="initial import", help="Note for the v0 history entry.")
 def init(files, note):
-    """Register FILES as version 1 of a tracked document each.
+    """Register FILES as version 0 of a tracked document each.
 
     FILES accepts literal paths or shell-style glob patterns (e.g.
     "*.docx"), like `ls` — quote a pattern to expand it inside
@@ -57,7 +57,7 @@ def init(files, note):
             click.echo(f"skip {src.name}: already tracked as '{base_stem}'")
             continue
 
-        version = existing_version or 1
+        version = existing_version if existing_version is not None else 0
         ext = src.suffix
         new_name = core.versioned_name(base_stem, version, ext)
         new_path = directory / new_name
@@ -234,16 +234,23 @@ def log(file):
 @click.argument("directory", type=click.Path(exists=True, file_okay=False), required=False)
 @click.argument("patterns", nargs=-1)
 @click.option("--note", default="", help="Note applied to any bump performed.")
+@click.option(
+    "--skip-unchanged",
+    is_flag=True,
+    default=False,
+    help="Skip a tracked doc whose content hasn't changed since its current version began, "
+    "instead of always bumping it.",
+)
 @click.pass_context
-def sync(ctx, directory, patterns, note):
-    """One-click, idempotent folder sync — safe to run repeatedly (e.g.
-    from a Finder Quick Action).
+def sync(ctx, directory, patterns, note, skip_unchanged):
+    """One-click folder sync — safe to run repeatedly (e.g. from a Finder
+    Quick Action).
 
     Onboards any file in DIRECTORY matching PATTERNS (default "*.docx")
-    that isn't tracked yet (registers it as v1), then bumps every
-    already-tracked document whose current file has changed since its
-    version began. Unchanged documents are left alone — running sync
-    twice in a row with no edits in between does nothing the second time.
+    that isn't tracked yet (registers it as v0), then bumps every
+    already-tracked document — every run, whether or not the file has
+    actually changed. Pass --skip-unchanged to skip a doc whose content
+    is identical to its current version instead.
 
     Files matching a pattern in DIRECTORY's .docversionignore are never
     auto-onboarded (an explicit `init` still works on them).
@@ -279,7 +286,11 @@ def sync(ctx, directory, patterns, note):
         working = directory / entry["working_file"]
         if not working.exists():
             continue
-        if entry["history"] and core.sha256_of(working) == entry["history"][-1]["sha256"]:
+        if (
+            skip_unchanged
+            and entry["history"]
+            and core.sha256_of(working) == entry["history"][-1]["sha256"]
+        ):
             skipped += 1
             continue
         ctx.invoke(bump, file=str(working), note=note)

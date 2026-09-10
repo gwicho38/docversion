@@ -12,7 +12,12 @@ MANIFEST_NAME = ".docversion.json"
 VERSIONS_DIR = "versions"
 IGNORE_FILE_NAME = ".docversionignore"
 HASH_LEN = 8
-VERSION_SUFFIX_RE = re.compile(r"^(?P<stem>.*?)(?: v(?P<version>\d+)(?:-[0-9a-f]{6,16})?)$")
+VERSION_SUFFIX_RE = re.compile(
+    r"^(?P<stem>.*?)(?:"
+    r" [0-9a-f]{6,16}_v(?P<version_current>\d+)"  # current: "title <hash>_v<N>"
+    r"| v(?P<version_legacy>\d+)(?:-[0-9a-f]{6,16})?"  # legacy: "title vN" / "title vN-hash"
+    r")$"
+)
 
 
 def load_manifest(directory: Path) -> dict:
@@ -41,14 +46,17 @@ def version_suffix(display_name: str, version: int) -> str:
 
 def versioned_name(display_name: str, version: int, ext: str) -> str:
     """The on-disk filename for DISPLAY_NAME's VERSION, e.g.
-    'Operating Agreement v3-9f2c7a1e.docx'."""
-    return f"{display_name} v{version}-{version_suffix(display_name, version)}{ext}"
+    'Operating Agreement 9f2c7a1e_v3.docx'."""
+    return f"{display_name} {version_suffix(display_name, version)}_v{version}{ext}"
 
 
 def split_version(stem: str):
     m = VERSION_SUFFIX_RE.match(stem)
     if m:
-        return m.group("stem"), int(m.group("version"))
+        version = m.group("version_current")
+        if version is None:
+            version = m.group("version_legacy")
+        return m.group("stem"), int(version)
     return stem, None
 
 
