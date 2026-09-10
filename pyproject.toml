@@ -1,0 +1,30 @@
+[project]
+name = "docversion"
+version = "0.1.0"
+description = "Filename-based document versioning with a manifest history and git-backed archives — preserves Word Track Changes untouched across version bumps."
+readme = "README.md"
+license = "MIT"
+authors = [
+    { name = "lefv", email = "luis@lefv.io" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "click>=8.1",
+]
+
+[project.scripts]
+docversion = "docversion.cli:cli"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.16,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
