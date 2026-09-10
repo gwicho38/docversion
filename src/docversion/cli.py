@@ -59,7 +59,7 @@ def init(files, note):
 
         version = existing_version or 1
         ext = src.suffix
-        new_name = f"{base_stem} v{version}{ext}"
+        new_name = core.versioned_name(base_stem, version, ext)
         new_path = directory / new_name
         if src != new_path:
             src.rename(new_path)
@@ -112,12 +112,12 @@ def bump(file, note):
     ext = src.suffix
     display = entry["display_name"]
 
-    frozen_name = f"{display} v{current_version}{ext}"
+    frozen_name = core.versioned_name(display, current_version, ext)
     frozen_path = versions_dir / frozen_name
     shutil.copy2(src, frozen_path)  # always freshen: src may have been edited since init/last bump
 
     next_version = current_version + 1
-    next_name = f"{display} v{next_version}{ext}"
+    next_name = core.versioned_name(display, next_version, ext)
     next_path = directory / next_name
     shutil.copy2(src, next_path)
 
@@ -159,14 +159,17 @@ def restore(file, version, note):
     display = entry["display_name"]
     ext = Path(entry["working_file"]).suffix
 
-    archive_path = directory / core.VERSIONS_DIR / f"{display} v{version}{ext}"
+    archive_rel = next((h["file"] for h in entry["history"] if h["version"] == version), None)
+    if archive_rel is None:
+        raise click.ClickException(f"No history entry for v{version} of {display}")
+    archive_path = directory / archive_rel
     if not archive_path.exists():
-        raise click.ClickException(f"No archived v{version} found at {archive_path}")
+        raise click.ClickException(f"v{version} is recorded at {archive_path} but the file is missing")
 
     current_version = entry["current_version"]
     current_path = directory / entry["working_file"]
     versions_dir = directory / core.VERSIONS_DIR
-    frozen_name = f"{display} v{current_version}{ext}"
+    frozen_name = core.versioned_name(display, current_version, ext)
     frozen_path = versions_dir / frozen_name
     if current_path.exists():
         shutil.copy2(current_path, frozen_path)  # always freshen: current may have been edited
@@ -180,7 +183,7 @@ def restore(file, version, note):
         )
 
     next_version = current_version + 1
-    next_name = f"{display} v{next_version}{ext}"
+    next_name = core.versioned_name(display, next_version, ext)
     next_path = directory / next_name
     shutil.copy2(archive_path, next_path)
 

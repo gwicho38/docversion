@@ -13,6 +13,10 @@ def make_git_repo(path: Path) -> None:
     subprocess.run(["git", "config", "user.name", "Test"], cwd=path, check=True)
 
 
+def vname(display: str, version: int, ext: str = ".docx") -> str:
+    return core.versioned_name(display, version, ext)
+
+
 def test_init_renames_and_archives(tmp_path):
     make_git_repo(tmp_path)
     doc = tmp_path / "Operating Agreement.docx"
@@ -23,8 +27,8 @@ def test_init_renames_and_archives(tmp_path):
     assert result.exit_code == 0, result.output
 
     assert not doc.exists()
-    working = tmp_path / "Operating Agreement v1.docx"
-    archived = tmp_path / "versions" / "Operating Agreement v1.docx"
+    working = tmp_path / vname("Operating Agreement", 1)
+    archived = tmp_path / "versions" / vname("Operating Agreement", 1)
     assert working.exists()
     assert archived.exists()
     assert archived.read_bytes() == b"draft content with track changes"
@@ -32,7 +36,7 @@ def test_init_renames_and_archives(tmp_path):
     manifest = core.load_manifest(tmp_path)
     entry = manifest["docs"]["operating agreement"]
     assert entry["current_version"] == 1
-    assert entry["working_file"] == "Operating Agreement v1.docx"
+    assert entry["working_file"] == vname("Operating Agreement", 1)
     assert len(entry["history"]) == 1
 
 
@@ -43,24 +47,24 @@ def test_bump_preserves_content_and_advances_version(tmp_path):
     runner = CliRunner()
     runner.invoke(cli, ["init", str(doc)])
 
-    v1_path = tmp_path / "Waiver v1.docx"
+    v1_path = tmp_path / vname("Waiver", 1)
     v1_path.write_bytes(b"v1 body edited with tracked changes")
 
     result = runner.invoke(cli, ["bump", str(v1_path), "--note", "sent for review"])
     assert result.exit_code == 0, result.output
 
     assert not v1_path.exists()
-    v2_path = tmp_path / "Waiver v2.docx"
+    v2_path = tmp_path / vname("Waiver", 2)
     assert v2_path.exists()
     assert v2_path.read_bytes() == b"v1 body edited with tracked changes"
 
-    frozen_v1 = tmp_path / "versions" / "Waiver v1.docx"
+    frozen_v1 = tmp_path / "versions" / vname("Waiver", 1)
     assert frozen_v1.read_bytes() == b"v1 body edited with tracked changes"
 
     manifest = core.load_manifest(tmp_path)
     entry = manifest["docs"]["waiver"]
     assert entry["current_version"] == 2
-    assert entry["working_file"] == "Waiver v2.docx"
+    assert entry["working_file"] == vname("Waiver", 2)
     assert entry["history"][-1]["note"] == "sent for review"
 
 
@@ -70,10 +74,12 @@ def test_bump_rejects_non_current_file(tmp_path):
     doc.write_bytes(b"body")
     runner = CliRunner()
     runner.invoke(cli, ["init", str(doc)])
-    runner.invoke(cli, ["bump", str(tmp_path / "Contract v1.docx")])
+    v1_path = tmp_path / vname("Contract", 1)
+    v1_path.write_bytes(b"body edited")  # ensure a real change so bump advances
+    runner.invoke(cli, ["bump", str(v1_path)])  # now current is v2
 
-    # v1 file no longer exists on disk (bump removed it); recreate stale copy
-    stale = tmp_path / "Contract v1.docx"
+    # v1 file no longer exists on disk; recreate a stale copy under its old name
+    stale = tmp_path / vname("Contract", 1)
     stale.write_bytes(b"stale")
     result = runner.invoke(cli, ["bump", str(stale)])
     assert result.exit_code != 0
@@ -86,13 +92,13 @@ def test_restore_brings_back_old_version_as_new_current(tmp_path):
     doc.write_bytes(b"original")
     runner = CliRunner()
     runner.invoke(cli, ["init", str(doc)])
-    v1_path = tmp_path / "NDA v1.docx"
-    runner.invoke(cli, ["bump", str(v1_path)])  # -> v2 exists now
+    v1_path = tmp_path / vname("NDA", 1)
+    runner.invoke(cli, ["bump", str(v1_path)])  # -> v2 exists now, still "original"
 
-    result = runner.invoke(cli, ["restore", str(tmp_path / "NDA v2.docx"), "1"])
+    result = runner.invoke(cli, ["restore", str(tmp_path / vname("NDA", 2)), "1"])
     assert result.exit_code == 0, result.output
 
-    v3_path = tmp_path / "NDA v3.docx"
+    v3_path = tmp_path / vname("NDA", 3)
     assert v3_path.exists()
     assert v3_path.read_bytes() == b"original"
 
@@ -136,11 +142,12 @@ def test_bump_accepts_name_without_version_suffix(tmp_path, monkeypatch):
     doc.write_bytes(b"body")
     runner = CliRunner()
     runner.invoke(cli, ["init", str(doc)])
+    (tmp_path / vname("Charter", 1)).write_bytes(b"body edited")
 
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(cli, ["bump", "Charter", "--note", "v2 draft"])
     assert result.exit_code == 0, result.output
-    assert (tmp_path / "Charter v2.docx").exists()
+    assert (tmp_path / vname("Charter", 2)).exists()
 
 
 def test_sync_onboards_new_files_matching_pattern(tmp_path):
@@ -170,7 +177,7 @@ def test_sync_skips_unchanged_tracked_doc(tmp_path):
 
     manifest = core.load_manifest(tmp_path)
     assert manifest["docs"]["beta"]["current_version"] == 1
-    assert (tmp_path / "Beta v1.docx").exists()
+    assert (tmp_path / vname("Beta", 1)).exists()
 
 
 def test_sync_bumps_changed_tracked_doc(tmp_path):
@@ -179,7 +186,7 @@ def test_sync_bumps_changed_tracked_doc(tmp_path):
     doc.write_bytes(b"body")
     runner = CliRunner()
     runner.invoke(cli, ["init", str(doc)])
-    (tmp_path / "Gamma v1.docx").write_bytes(b"body edited with tracked changes")
+    (tmp_path / vname("Gamma", 1)).write_bytes(b"body edited with tracked changes")
 
     result = runner.invoke(cli, ["sync", str(tmp_path), "*.docx"])
     assert result.exit_code == 0, result.output
@@ -188,7 +195,7 @@ def test_sync_bumps_changed_tracked_doc(tmp_path):
     manifest = core.load_manifest(tmp_path)
     entry = manifest["docs"]["gamma"]
     assert entry["current_version"] == 2
-    assert (tmp_path / "Gamma v2.docx").read_bytes() == b"body edited with tracked changes"
+    assert (tmp_path / vname("Gamma", 2)).read_bytes() == b"body edited with tracked changes"
 
 
 def test_sync_default_directory_is_cwd(tmp_path, monkeypatch):
@@ -208,9 +215,27 @@ def test_log_shows_history(tmp_path):
     doc.write_bytes(b"content")
     runner = CliRunner()
     runner.invoke(cli, ["init", str(doc)])
-    runner.invoke(cli, ["bump", str(tmp_path / "Report v1.docx"), "--note", "second draft"])
+    v1_path = tmp_path / vname("Report", 1)
+    v1_path.write_bytes(b"content edited")
+    runner.invoke(cli, ["bump", str(v1_path), "--note", "second draft"])
 
-    result = runner.invoke(cli, ["log", str(tmp_path / "Report v2.docx")])
+    result = runner.invoke(cli, ["log", str(tmp_path / vname("Report", 2))])
     assert result.exit_code == 0, result.output
     assert "second draft" in result.output
     assert "v1" in result.output
+
+
+def test_versions_of_same_doc_have_distinct_filenames(tmp_path):
+    make_git_repo(tmp_path)
+    doc = tmp_path / "Distinct.docx"
+    doc.write_bytes(b"body")
+    runner = CliRunner()
+    runner.invoke(cli, ["init", str(doc)])
+    v1_path = tmp_path / vname("Distinct", 1)
+    v1_path.write_bytes(b"body edited")
+    runner.invoke(cli, ["bump", str(v1_path)])
+
+    manifest = core.load_manifest(tmp_path)
+    entry = manifest["docs"]["distinct"]
+    assert entry["working_file"] != vname("Distinct", 1)
+    assert entry["working_file"] == vname("Distinct", 2)

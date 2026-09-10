@@ -18,6 +18,43 @@ def test_split_version_ignores_v_inside_word():
     assert core.split_version("Version Notes") == ("Version Notes", None)
 
 
+def test_split_version_handles_hashed_suffix():
+    assert core.split_version("Operating Agreement v3-9f2c7a1e") == ("Operating Agreement", 3)
+
+
+def test_version_suffix_is_deterministic():
+    a = core.version_suffix("Operating Agreement", 3)
+    b = core.version_suffix("Operating Agreement", 3)
+    assert a == b
+    assert len(a) == core.HASH_LEN
+    assert all(c in "0123456789abcdef" for c in a)
+
+
+def test_version_suffix_differs_by_version_number():
+    a = core.version_suffix("Operating Agreement", 1)
+    b = core.version_suffix("Operating Agreement", 2)
+    assert a != b
+
+
+def test_version_suffix_differs_by_title():
+    a = core.version_suffix("Operating Agreement", 1)
+    b = core.version_suffix("Employee Waiver", 1)
+    assert a != b
+
+
+def test_versioned_name_includes_number_and_hash():
+    name = core.versioned_name("Operating Agreement", 3, ".docx")
+    assert name.startswith("Operating Agreement v3-")
+    assert name.endswith(".docx")
+    assert name == f"Operating Agreement v3-{core.version_suffix('Operating Agreement', 3)}.docx"
+
+
+def test_versioned_name_round_trips_through_split_version():
+    name = core.versioned_name("Operating Agreement", 3, ".docx")
+    stem = name[: -len(".docx")]
+    assert core.split_version(stem) == ("Operating Agreement", 3)
+
+
 def test_key_for_is_case_insensitive():
     assert core.key_for("Operating Agreement") == core.key_for("operating agreement")
 

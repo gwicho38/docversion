@@ -9,7 +9,8 @@ from typing import Optional
 
 MANIFEST_NAME = ".docversion.json"
 VERSIONS_DIR = "versions"
-VERSION_SUFFIX_RE = re.compile(r"^(?P<stem>.*?)(?: v(?P<version>\d+))$")
+HASH_LEN = 8
+VERSION_SUFFIX_RE = re.compile(r"^(?P<stem>.*?)(?: v(?P<version>\d+)(?:-[0-9a-f]{6,16})?)$")
 
 
 def load_manifest(directory: Path) -> dict:
@@ -26,6 +27,20 @@ def save_manifest(directory: Path, manifest: dict) -> None:
 
 def sha256_of(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def version_suffix(display_name: str, version: int) -> str:
+    """Deterministic short hash of (title, version number) — same inputs
+    always produce the same tag, so a version's filename is reproducible,
+    but visibly different from every other version of the same document."""
+    digest = hashlib.sha256(f"{display_name}::{version}".encode()).hexdigest()
+    return digest[:HASH_LEN]
+
+
+def versioned_name(display_name: str, version: int, ext: str) -> str:
+    """The on-disk filename for DISPLAY_NAME's VERSION, e.g.
+    'Operating Agreement v3-9f2c7a1e.docx'."""
+    return f"{display_name} v{version}-{version_suffix(display_name, version)}{ext}"
 
 
 def split_version(stem: str):
