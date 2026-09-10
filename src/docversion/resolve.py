@@ -44,6 +44,14 @@ def expand_patterns(patterns, directory: Optional[Path] = None) -> List[Path]:
     return results
 
 
+def glob_existing(pattern: str, directory: Optional[Path] = None) -> List[Path]:
+    """Glob PATTERN under DIRECTORY, returning whatever matches (possibly
+    empty) — unlike expand_patterns, a non-match is not an error. Used by
+    `sync`, which must tolerate a pattern matching nothing on a given run.
+    """
+    return _glob(pattern, directory or Path.cwd())
+
+
 def resolve_one(pattern: str, directory: Optional[Path] = None) -> Path:
     """Resolve PATTERN to exactly one file: a literal path, a glob that
     matches exactly one file, or a tracked document's name (mapped to

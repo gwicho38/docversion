@@ -228,6 +228,56 @@ def log(file):
 
 
 @cli.command()
+@click.argument("directory", type=click.Path(exists=True, file_okay=False), required=False)
+@click.argument("patterns", nargs=-1)
+@click.option("--note", default="", help="Note applied to any bump performed.")
+@click.pass_context
+def sync(ctx, directory, patterns, note):
+    """One-click, idempotent folder sync — safe to run repeatedly (e.g.
+    from a Finder Quick Action).
+
+    Onboards any file in DIRECTORY matching PATTERNS (default "*.docx")
+    that isn't tracked yet (registers it as v1), then bumps every
+    already-tracked document whose current file has changed since its
+    version began. Unchanged documents are left alone — running sync
+    twice in a row with no edits in between does nothing the second time.
+    """
+    directory = Path(directory).resolve() if directory else Path.cwd()
+    patterns = patterns or ("*.docx",)
+    manifest = core.load_manifest(directory)
+
+    candidates = set()
+    for pattern in patterns:
+        candidates.update(resolve.glob_existing(pattern, directory))
+
+    new_files = []
+    for c in sorted(candidates):
+        if not c.is_file() or c.parent != directory:
+            continue
+        base_stem, _ = core.split_version(c.stem)
+        key = core.key_for(base_stem)
+        if not core.find_doc_by_key(manifest, key):
+            new_files.append(c)
+
+    if new_files:
+        ctx.invoke(init, files=[str(f) for f in new_files])
+        manifest = core.load_manifest(directory)
+
+    bumped = skipped = 0
+    for entry in manifest["docs"].values():
+        working = directory / entry["working_file"]
+        if not working.exists():
+            continue
+        if entry["history"] and core.sha256_of(working) == entry["history"][-1]["sha256"]:
+            skipped += 1
+            continue
+        ctx.invoke(bump, file=str(working), note=note)
+        bumped += 1
+
+    click.echo(f"sync: {len(new_files)} onboarded, {bumped} bumped, {skipped} unchanged")
+
+
+@cli.command()
 def status():
     """List all tracked documents in the current directory."""
     directory = Path.cwd()

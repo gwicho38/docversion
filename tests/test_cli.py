@@ -143,6 +143,65 @@ def test_bump_accepts_name_without_version_suffix(tmp_path, monkeypatch):
     assert (tmp_path / "Charter v2.docx").exists()
 
 
+def test_sync_onboards_new_files_matching_pattern(tmp_path):
+    make_git_repo(tmp_path)
+    (tmp_path / "Alpha.docx").write_bytes(b"a")
+    (tmp_path / "notes.txt").write_bytes(b"n")
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["sync", str(tmp_path), "*.docx"])
+    assert result.exit_code == 0, result.output
+
+    manifest = core.load_manifest(tmp_path)
+    assert "alpha" in manifest["docs"]
+    assert (tmp_path / "notes.txt").exists()  # untouched
+
+
+def test_sync_skips_unchanged_tracked_doc(tmp_path):
+    make_git_repo(tmp_path)
+    doc = tmp_path / "Beta.docx"
+    doc.write_bytes(b"body")
+    runner = CliRunner()
+    runner.invoke(cli, ["init", str(doc)])
+
+    result = runner.invoke(cli, ["sync", str(tmp_path), "*.docx"])
+    assert result.exit_code == 0, result.output
+    assert "1 unchanged" in result.output
+
+    manifest = core.load_manifest(tmp_path)
+    assert manifest["docs"]["beta"]["current_version"] == 1
+    assert (tmp_path / "Beta v1.docx").exists()
+
+
+def test_sync_bumps_changed_tracked_doc(tmp_path):
+    make_git_repo(tmp_path)
+    doc = tmp_path / "Gamma.docx"
+    doc.write_bytes(b"body")
+    runner = CliRunner()
+    runner.invoke(cli, ["init", str(doc)])
+    (tmp_path / "Gamma v1.docx").write_bytes(b"body edited with tracked changes")
+
+    result = runner.invoke(cli, ["sync", str(tmp_path), "*.docx"])
+    assert result.exit_code == 0, result.output
+    assert "1 bumped" in result.output
+
+    manifest = core.load_manifest(tmp_path)
+    entry = manifest["docs"]["gamma"]
+    assert entry["current_version"] == 2
+    assert (tmp_path / "Gamma v2.docx").read_bytes() == b"body edited with tracked changes"
+
+
+def test_sync_default_directory_is_cwd(tmp_path, monkeypatch):
+    make_git_repo(tmp_path)
+    (tmp_path / "Delta.docx").write_bytes(b"d")
+    monkeypatch.chdir(tmp_path)
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["sync"])
+    assert result.exit_code == 0, result.output
+    assert "delta" in core.load_manifest(tmp_path)["docs"]
+
+
 def test_log_shows_history(tmp_path):
     make_git_repo(tmp_path)
     doc = tmp_path / "Report.docx"
