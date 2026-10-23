@@ -21,7 +21,9 @@ files.
 - `bump` freezes the current working file as its version, then opens
   the next version as a byte-identical copy — any Track Changes markup
   inside the file carries over unchanged. It always advances the
-  version, whether or not the content actually changed.
+  version, whether or not the content actually changed. `--note`
+  labels the new version, the same way `init --note` labels v0. The
+  history keeps one row per version.
 - `restore` brings an older version back as a new current version
   (non-destructive: restoring is itself a version bump). It looks the
   old version up from the manifest's history, not by recomputing a
@@ -62,11 +64,11 @@ docversion init "Operating Agreement.docx" "Employee Waiver.docx"
 # ... edit the resulting "Operating Agreement <hash>_v0.docx" in Word ...
 
 # Lock in v0, start editing v1 (works with or without edits — bump always advances)
-docversion bump "Operating Agreement" --note "sent to client for review"
+docversion bump "Operating Agreement" --note "client review round"
 
 # ... edit "Operating Agreement <hash>_v1.docx" ...
 
-docversion bump "Operating Agreement" --note "incorporated counsel comments"
+docversion bump "Operating Agreement" --note "counsel comments round"
 
 # See the full history (reference by tracked name — no version number to remember)
 docversion log "Operating Agreement"

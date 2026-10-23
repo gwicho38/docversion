@@ -115,11 +115,8 @@ def _bump_one(src: Path, note: str) -> str:
     next_path = directory / next_name
     shutil.copy2(src, next_path)
 
-    entry["history"].append(
-        core.new_history_entry(
-            current_version, f"{core.VERSIONS_DIR}/{frozen_name}", note or "(no note)", core.sha256_of(frozen_path)
-        )
-    )
+    core.record_frozen(entry, current_version, f"{core.VERSIONS_DIR}/{frozen_name}", core.sha256_of(frozen_path))
+    core.record_opened(entry, next_version, f"{core.VERSIONS_DIR}/{next_name}", note, core.sha256_of(next_path))
     entry["current_version"] = next_version
     entry["working_file"] = next_name
     core.save_manifest(directory, manifest)
@@ -137,7 +134,7 @@ def _bump_one(src: Path, note: str) -> str:
 
 @cli.command()
 @click.argument("files", nargs=-1, required=True)
-@click.option("--note", default="", help="What changed in this version.")
+@click.option("--note", default="", help="Label for the new version being opened.")
 def bump(files, note):
     """Freeze the current version of FILES and open the next version of
     each for editing.
@@ -210,19 +207,19 @@ def restore(file, version, note):
     frozen_path = versions_dir / frozen_name
     if current_path.exists():
         shutil.copy2(current_path, frozen_path)  # always freshen: current may have been edited
-        entry["history"].append(
-            core.new_history_entry(
-                current_version,
-                f"{core.VERSIONS_DIR}/{frozen_name}",
-                "(auto-frozen before restore)",
-                core.sha256_of(frozen_path),
-            )
-        )
+        core.record_frozen(entry, current_version, f"{core.VERSIONS_DIR}/{frozen_name}", core.sha256_of(frozen_path))
 
     next_version = current_version + 1
     next_name = core.versioned_name(display, next_version, ext)
     next_path = directory / next_name
     shutil.copy2(archive_path, next_path)
+    core.record_opened(
+        entry,
+        next_version,
+        f"{core.VERSIONS_DIR}/{next_name}",
+        f"restored from v{version}" + (f" — {note}" if note else ""),
+        core.sha256_of(next_path),
+    )
 
     if current_path.exists() and current_path != next_path:
         gitutil.rm_cached(directory, current_path.name)

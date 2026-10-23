@@ -377,3 +377,94 @@ def test_versions_of_same_doc_have_distinct_filenames(tmp_path):
     entry = manifest["docs"]["distinct"]
     assert entry["working_file"] != vname("Distinct", 0)
     assert entry["working_file"] == vname("Distinct", 1)
+
+
+# --- issue #1: one history row per version; the bump note labels the new version ---
+
+
+def _versions(entry):
+    return [h["version"] for h in entry["history"]]
+
+
+def test_bump_note_labels_the_new_version_not_the_frozen_one(tmp_path):
+    make_git_repo(tmp_path)
+    doc = tmp_path / "Deck.pdf"
+    doc.write_bytes(b"as received")
+    runner = CliRunner()
+    runner.invoke(cli, ["init", str(doc), "--note", "as received"])
+    v0_path = tmp_path / vname("Deck", 0, ".pdf")
+
+    result = runner.invoke(cli, ["bump", str(v0_path), "--note", "review markup"])
+    assert result.exit_code == 0, result.output
+
+    entry = core.load_manifest(tmp_path)["docs"]["deck"]
+    assert _versions(entry) == [0, 1]
+    by_version = {h["version"]: h for h in entry["history"]}
+    assert by_version[0]["note"] == "as received"
+    assert by_version[1]["note"] == "review markup"
+
+
+def test_bump_refreshes_frozen_row_instead_of_duplicating_it(tmp_path):
+    make_git_repo(tmp_path)
+    doc = tmp_path / "Deck.pdf"
+    doc.write_bytes(b"as received")
+    runner = CliRunner()
+    runner.invoke(cli, ["init", str(doc)])
+    v0_path = tmp_path / vname("Deck", 0, ".pdf")
+    v0_path.write_bytes(b"edited before freeze")
+
+    runner.invoke(cli, ["bump", str(v0_path), "--note", "first"])
+    runner.invoke(cli, ["bump", str(tmp_path / vname("Deck", 1, ".pdf")), "--note", "second"])
+
+    entry = core.load_manifest(tmp_path)["docs"]["deck"]
+    assert _versions(entry) == [0, 1, 2]
+    v0_row = entry["history"][0]
+    frozen_v0 = tmp_path / v0_row["file"]
+    assert frozen_v0.read_bytes() == b"edited before freeze"
+    assert v0_row["sha256"] == core.sha256_of(frozen_v0)
+
+
+def test_log_lists_each_version_once(tmp_path, monkeypatch):
+    make_git_repo(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    doc = tmp_path / "Report.docx"
+    doc.write_bytes(b"content")
+    runner = CliRunner()
+    runner.invoke(cli, ["init", str(doc), "--note", "first draft"])
+    runner.invoke(cli, ["bump", str(tmp_path / vname("Report", 0)), "--note", "second draft"])
+
+    result = runner.invoke(cli, ["log", "Report"])
+    assert result.exit_code == 0, result.output
+    lines = [ln.strip() for ln in result.output.splitlines() if ln.strip().startswith("v")]
+    assert [ln.split()[0] for ln in lines] == ["v0", "v1"]
+    assert "first draft" in lines[0]
+    assert "second draft" in lines[1]
+
+
+def test_restore_records_new_version_without_duplicating_current(tmp_path):
+    make_git_repo(tmp_path)
+    doc = tmp_path / "NDA.docx"
+    doc.write_bytes(b"original")
+    runner = CliRunner()
+    runner.invoke(cli, ["init", str(doc)])
+    runner.invoke(cli, ["bump", str(tmp_path / vname("NDA", 0)), "--note", "edits"])
+
+    result = runner.invoke(cli, ["restore", str(tmp_path / vname("NDA", 1)), "0", "--note", "back out edits"])
+    assert result.exit_code == 0, result.output
+
+    entry = core.load_manifest(tmp_path)["docs"]["nda"]
+    assert _versions(entry) == [0, 1, 2]
+    assert "back out edits" in entry["history"][-1]["note"]
+    assert "v0" in entry["history"][-1]["note"]
+
+
+def test_skip_unchanged_still_skips_after_fix(tmp_path, monkeypatch):
+    make_git_repo(tmp_path)
+    (tmp_path / "Memo.docx").write_bytes(b"same")
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    runner.invoke(cli, ["sync"])
+    runner.invoke(cli, ["sync"])  # -> v1, unchanged copy
+    result = runner.invoke(cli, ["sync", "--skip-unchanged"])
+    assert result.exit_code == 0, result.output
+    assert "1 unchanged" in result.output
