@@ -108,3 +108,23 @@ def new_history_entry(version: int, archive_rel_path: str, note: str, sha256: st
         "note": note,
         "sha256": sha256,
     }
+
+
+def record_frozen(entry: dict, version: int, archive_rel_path: str, sha256: str) -> None:
+    """Point VERSION's history row at its frozen archive copy.
+
+    Each version has one row. Freezing refreshes that row's file and hash
+    (the working copy may have been edited since the row was written) and
+    keeps its note. A manifest without a row for VERSION gets one.
+    """
+    for row in entry["history"]:
+        if row["version"] == version:
+            row["file"] = archive_rel_path
+            row["sha256"] = sha256
+            return
+    entry["history"].append(new_history_entry(version, archive_rel_path, "(no note)", sha256))
+
+
+def record_opened(entry: dict, version: int, archive_rel_path: str, note: str, sha256: str) -> None:
+    """Add the history row for a newly opened VERSION, labelled with NOTE."""
+    entry["history"].append(new_history_entry(version, archive_rel_path, note or "(no note)", sha256))
