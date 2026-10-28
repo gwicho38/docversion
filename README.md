@@ -35,7 +35,11 @@ files.
   current version instead of always bumping it.
 - `log` / `status` show history.
 - Every state-changing command commits to git automatically if the
-  directory is a repo.
+  directory is a repo. The commit holds only the files that command
+  touched (see "Git commits" below).
+- `.docversionignore` lists file name patterns, one per line, that
+  docversion leaves alone. `sync` never onboards a matching file, and
+  `init` skips one and says so. `init --force` tracks it anyway.
 - `FILE` arguments (for `bump`, `restore`, `log`) accept a literal
   path, a glob that matches exactly one file, or just the document's
   tracked name — you don't need to know its current version number.
@@ -85,7 +89,29 @@ docversion sync ~/Matters/some-matter "*.docx" "*.pdf"
 
 # Same, but skip a doc whose content hasn't changed instead of always bumping it
 docversion sync --skip-unchanged
+
+# Keep intake forms out of versioning, then track one on purpose
+echo "matter-intake.docx" >> .docversionignore
+docversion init matter-intake.docx           # prints "skip matter-intake.docx: ignored by .docversionignore ..."
+docversion init --force matter-intake.docx   # tracked
 ```
+
+## Git commits
+
+When the folder is inside a git repo, `init`, `bump` and `restore`
+commit their changes, and `sync` commits each step it runs. Each commit
+holds only the files that step touched: the old and new working file,
+the copy under `versions/`, and `.docversion.json`.
+
+- Anything else you staged stays staged, and untracked files stay
+  untracked. docversion does not sweep your other work into its commit.
+- File names are taken literally. A name such as `[Draft] v1.docx` is
+  never read as a pattern that also matches `D v1.docx`.
+- A file that git ignores (for example, `versions/` listed in
+  `.gitignore`) is left out of the commit. The rest still commits.
+- "Nothing to commit" is not an error. If git refuses the commit (for
+  example, a pre-commit hook fails), docversion prints
+  `git commit skipped: …` and keeps the file changes.
 
 ## Finder Quick Action
 
