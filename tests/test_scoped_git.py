@@ -39,7 +39,8 @@ def test_init_does_not_commit_unrelated_untracked_file(tmp_path, monkeypatch):
     result = CliRunner().invoke(cli, ["init", "Agreement.docx"])
     assert result.exit_code == 0, result.output
 
-    assert "notes.txt" not in head_files(tmp_path)
+    v0 = core.versioned_name("Agreement", 0, ".docx")
+    assert head_files(tmp_path) == {v0, f"versions/{v0}", ".docversion.json"}
     assert "?? notes.txt" in git(tmp_path, "status", "--porcelain")
 
 
