@@ -1,6 +1,6 @@
 [project]
 name = "docversion"
-version = "0.1.1"
+version = "0.1.2"
 description = "Filename-based document versioning with a manifest history and git-backed archives — preserves Word Track Changes untouched across version bumps."
 readme = "README.md"
 license = "MIT"

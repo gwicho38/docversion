@@ -80,9 +80,9 @@ def load_ignore_patterns(directory: Path) -> List[str]:
     matched against a candidate file's name. Blank lines and lines
     starting with '#' are skipped. Missing file -> no patterns.
 
-    Only affects auto-discovery (`sync`'s pattern globbing) — an
-    explicit `init <file>` still tracks whatever you name, same as
-    `git add -f` overrides .gitignore.
+    `sync` never onboards a matching file. An explicit `init <file>`
+    skips a matching file too, unless you pass `--force` (as `git add -f`
+    overrides .gitignore).
     """
     path = directory / IGNORE_FILE_NAME
     if not path.exists():
