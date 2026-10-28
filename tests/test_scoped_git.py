@@ -186,3 +186,25 @@ def test_folder_inside_larger_repo_commits_only_its_touched_paths(tmp_path, monk
     assert "M  README.md" in status
     assert "?? matter/notes.txt" in status
     assert "?? other.txt" in status
+
+
+def test_init_with_gitignored_versions_dir_commits_working_file_and_manifest(tmp_path, monkeypatch):
+    """A repo whose .gitignore lists versions/. git refuses to add an
+    ignored path, so the archive copy must be dropped from the commit.
+    init still commits the working file and .docversion.json, and warns
+    about nothing."""
+    make_repo(tmp_path)
+    (tmp_path / ".gitignore").write_text("versions/\n")
+    git(tmp_path, "add", ".gitignore")
+    git(tmp_path, "commit", "-q", "-m", "ignore archives")
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "Agreement.docx").write_bytes(b"draft")
+
+    result = CliRunner().invoke(cli, ["init", "Agreement.docx"])
+    assert result.exit_code == 0, result.output
+    assert "git commit skipped" not in result.output
+
+    v0 = core.versioned_name("Agreement", 0, ".docx")
+    assert (tmp_path / "versions" / v0).exists()
+    assert head_files(tmp_path) == {v0, ".docversion.json"}
+    assert git(tmp_path, "status", "--porcelain").strip() == ""
