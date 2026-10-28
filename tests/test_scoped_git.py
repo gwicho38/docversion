@@ -209,3 +209,26 @@ def test_init_with_gitignored_versions_dir_commits_working_file_and_manifest(tmp
     assert (tmp_path / "versions" / v0).exists()
     assert head_files(tmp_path) == {v0, ".docversion.json"}
     assert git(tmp_path, "status", "--porcelain").strip() == ""
+
+
+def test_restore_with_missing_working_file_commits_only_its_own_paths(tmp_path, monkeypatch):
+    """The working file is already gone and a file the user wrote sits
+    at the path restore would freeze to. restore copies nothing there and
+    deletes nothing, so neither path may enter its commit."""
+    make_repo(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "Waiver.docx").write_bytes(b"v0")
+    assert CliRunner().invoke(cli, ["init", "Waiver.docx"]).exit_code == 0
+    assert CliRunner().invoke(cli, ["bump", "Waiver"]).exit_code == 0
+    v1 = core.versioned_name("Waiver", 1, ".docx")
+    (tmp_path / v1).unlink()
+    (tmp_path / "versions" / v1).write_bytes(b"user's own file")
+
+    result = CliRunner().invoke(cli, ["restore", "Waiver", "0"])
+    assert result.exit_code == 0, result.output
+
+    v2 = core.versioned_name("Waiver", 2, ".docx")
+    assert head_files(tmp_path) == {v2, ".docversion.json"}
+    status = git(tmp_path, "status", "--porcelain")
+    assert f"?? versions/{v1}" in status.replace('"', "")
+    assert f" D {v1}" in status.replace('"', "")

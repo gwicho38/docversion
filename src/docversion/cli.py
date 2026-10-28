@@ -222,8 +222,10 @@ def restore(file, version, note):
     versions_dir = directory / core.VERSIONS_DIR
     frozen_name = core.versioned_name(display, current_version, ext)
     frozen_path = versions_dir / frozen_name
+    touched = []
     if current_path.exists():
         shutil.copy2(current_path, frozen_path)  # always freshen: current may have been edited
+        touched.append(frozen_path)
         core.record_frozen(entry, current_version, f"{core.VERSIONS_DIR}/{frozen_name}", core.sha256_of(frozen_path))
 
     next_version = current_version + 1
@@ -238,9 +240,12 @@ def restore(file, version, note):
         core.sha256_of(next_path),
     )
 
-    touched = [current_path, frozen_path, next_path, directory / core.MANIFEST_NAME]
+    # Commit only what restore changed: a working file that was already
+    # missing, or a frozen copy it did not write, stays out of the commit.
+    touched += [next_path, directory / core.MANIFEST_NAME]
     if current_path.exists() and current_path != next_path:
         current_path.unlink()
+        touched.append(current_path)
 
     entry["current_version"] = next_version
     entry["working_file"] = next_name
