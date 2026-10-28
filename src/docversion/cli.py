@@ -33,22 +33,32 @@ def cli():
 @cli.command()
 @click.argument("files", nargs=-1, required=True)
 @click.option("--note", default="initial import", help="Note for the v0 history entry.")
-def init(files, note):
+@click.option("--force", is_flag=True, default=False, help="Track a file even if .docversionignore matches it.")
+def init(files, note, force):
     """Register FILES as version 0 of a tracked document each.
 
     FILES accepts literal paths or shell-style glob patterns (e.g.
     "*.docx"), like `ls` — quote a pattern to expand it inside
     docversion instead of relying on shell globbing.
+
+    A file that matches .docversionignore is skipped; --force tracks it.
+    When no file is tracked, init writes nothing and makes no commit.
     """
     expanded = resolve.expand_patterns(files, directory=Path.cwd())
     directory = expanded[0].parent
     manifest = core.load_manifest(directory)
+    ignore_patterns = core.load_ignore_patterns(directory)
     versions_dir = directory / core.VERSIONS_DIR
-    versions_dir.mkdir(exist_ok=True)
+    touched = []
+    tracked_stems = []
 
     for src in expanded:
         if src.parent != directory:
             click.echo(f"skip {src.name}: not in {directory}")
+            continue
+
+        if not force and core.is_ignored(src.name, ignore_patterns):
+            click.echo(f"skip {src.name}: ignored by {core.IGNORE_FILE_NAME} (use --force to track it)")
             continue
 
         base_stem, existing_version = core.split_version(src.stem)
@@ -64,8 +74,11 @@ def init(files, note):
         if src != new_path:
             src.rename(new_path)
 
+        versions_dir.mkdir(exist_ok=True)
         archive_path = versions_dir / new_name
         shutil.copy2(new_path, archive_path)
+        touched += [src, new_path, archive_path]
+        tracked_stems.append(src.stem)
 
         manifest["docs"][key] = {
             "display_name": base_stem,
@@ -79,8 +92,12 @@ def init(files, note):
         }
         click.echo(f"tracked: {base_stem}  ->  {new_name}  (v{version} archived)")
 
+    if not touched:
+        return
+
     core.save_manifest(directory, manifest)
-    warning = gitutil.commit_all(directory, f"docversion: init {', '.join(p.stem for p in expanded)}")
+    touched.append(directory / core.MANIFEST_NAME)
+    warning = gitutil.commit_paths(directory, touched, f"docversion: init {', '.join(tracked_stems)}")
     if warning:
         click.echo(f"  ({warning})")
 
@@ -121,10 +138,10 @@ def _bump_one(src: Path, note: str) -> str:
     entry["working_file"] = next_name
     core.save_manifest(directory, manifest)
 
-    gitutil.rm_cached(directory, src.name)
     src.unlink()
-    warning = gitutil.commit_all(
+    warning = gitutil.commit_paths(
         directory,
+        [src, next_path, frozen_path, directory / core.MANIFEST_NAME],
         f"docversion: {display} v{current_version} -> v{next_version}" + (f" — {note}" if note else ""),
     )
     if warning:
@@ -221,15 +238,16 @@ def restore(file, version, note):
         core.sha256_of(next_path),
     )
 
+    touched = [current_path, frozen_path, next_path, directory / core.MANIFEST_NAME]
     if current_path.exists() and current_path != next_path:
-        gitutil.rm_cached(directory, current_path.name)
         current_path.unlink()
 
     entry["current_version"] = next_version
     entry["working_file"] = next_name
     core.save_manifest(directory, manifest)
-    warning = gitutil.commit_all(
+    warning = gitutil.commit_paths(
         directory,
+        touched,
         f"docversion: {display} restored v{version} as v{next_version}" + (f" — {note}" if note else ""),
     )
     if warning:
@@ -287,7 +305,8 @@ def sync(ctx, directory, patterns, note, skip_unchanged):
     is identical to its current version instead.
 
     Files matching a pattern in DIRECTORY's .docversionignore are never
-    auto-onboarded (an explicit `init` still works on them).
+    auto-onboarded (`init --force` still tracks one). Each onboard and
+    bump commits only the paths it touched.
     """
     directory = Path(directory).resolve() if directory else Path.cwd()
     patterns = patterns or ("*.docx",)
